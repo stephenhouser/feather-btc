@@ -1,0 +1,30 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "${workspaceRoot}",
+                "/Users/houser/Documents/Arduino/libraries",
+                "/Users/houser/Documents/Arduino/hardware/esp8266com/esp8266/cores/esp8266",
+                "/Users/houser/Documents/Arduino/hardware/esp8266com/esp8266/libraries",
+                "/Users/houser/Documents/Arduino/hardware/esp8266com/esp8266/tools/sdk/include"
+            ],
+            "browse": {
+                "limitSymbolsToIncludedHeaders": false,
+                "path": [
+                    "${workspaceRoot}",
+                    "/Users/houser/Documents/Arduino/libraries",
+                    "/Users/houser/Documents/Arduino/hardware/esp8266com/esp8266/cores/esp8266",
+                    "/Users/houser/Documents/Arduino/hardware/esp8266com/esp8266/libraries",
+                    "/Users/houser/Documents/Arduino/hardware/esp8266com/esp8266/tools/sdk/include"
+                ]
+            },
+            "intelliSenseMode": "clang-x64",
+            "macFrameworkPath": [
+                "/System/Library/Frameworks",
+                "/Library/Frameworks"
+            ]
+        }
+    ],
+    "version": 3
+}

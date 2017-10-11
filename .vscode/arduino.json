@@ -1,0 +1,8 @@
+{
+    "sketch": "feather-btc.ino",
+    "port": "/dev/cu.SLAB_USBtoUART",
+    "board": "esp8266com:esp8266:huzzah",
+    "output": "build",
+    "debugger": "jlink",
+    "configuration": "CpuFrequency=80,UploadSpeed=115200,FlashSize=4M3M"
+}
