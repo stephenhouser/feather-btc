@@ -77,8 +77,6 @@ char dot_animation[] = {B00000, B10000, B01000, B00010, B00001,
                         B11011, B00001, B00010, B01000, B10000};
 int dot_animation_step = 0;
 
-struct station_config wifi_config;
-
 #include "credentials.h"
 /* PREDEFINED_NETWORKS is a #define in credentials.h
  * #define PREDEFINED_NETWORKS { {"SSID", "username", "password"}, ...}
@@ -102,10 +100,12 @@ void connect(const char *ssid, const char *username, const char *password) {
     WiFi.begin(ssid, password);
   } else {
     // WPA2 configuration
+    struct station_config wifi_config;
+
     wifi_set_opmode(STATION_MODE);
     memset(&wifi_config, 0, sizeof(wifi_config));
   
-    strcpy((char*)wifi_config.ssid, ssid);
+    strcpy(reinterpret_cast<char*>(wifi_config.ssid), ssid);
     wifi_station_set_config(&wifi_config);
     
     wifi_station_clear_cert_key();
@@ -115,7 +115,8 @@ void connect(const char *ssid, const char *username, const char *password) {
     wifi_station_set_enterprise_username((uint8*)username, strlen(username));
     wifi_station_set_enterprise_password((uint8*)password, strlen(password));
 
-    wifi_station_connect();
+    WiFi.begin();
+    //wifi_station_connect();
   }
 }
 
@@ -172,8 +173,9 @@ void loop() {
     const struct WiFiNet *ap = wifi_scan();
     if (ap != NULL) {
       connect(ap->ssid, ap->username, ap->password);
+      Serial.print("-");
       while (WiFi.status() != WL_CONNECTED) {
-        delay(2000);
+        delay(1000);
         Serial.print(".");  
       }
     }
@@ -194,12 +196,12 @@ void loop() {
   http.begin("http://blockchain.info/ticker");
   Serial.print("-");
   int httpCode = http.GET();
-  Serial.print("-");
+  Serial.printf("-%d-", httpCode);
   if(httpCode > 0) {
       //Serial.printf("HTTP GET => %d\n", httpCode);
       if(httpCode == HTTP_CODE_OK) {
           DynamicJsonBuffer jsonBuffer;
-          Serial.print("-");
+          Serial.printf("-%d bytes-", http.getSize());
           String payload = http.getString();
           //Serial.println(payload);
           //Serial.flush();
@@ -216,13 +218,8 @@ void loop() {
             if (usd != 0.0) {
               Serial.print("$");
               last_btc = usd;
-              EEPROM_writeAnything(0, last_btc);
-              Serial.print("$");
-              
-              Serial.printf(" BTC=%g ", usd);
-              display7.print(round(usd));
-              display7.writeDisplay();
-              Serial.print("$");
+              //EEPROM_writeAnything(0, last_btc);
+              Serial.print("$");              
             }
           }
       }
@@ -231,6 +228,11 @@ void loop() {
   }
 
   http.end();
+
+  Serial.printf(" BTC=%g ", last_btc);
+  display7.print(round(last_btc));
+  display7.writeDisplay();
   Serial.println("E");
-  delay(60000);
+
+  delay(15000);
 }
