@@ -66,8 +66,12 @@ uint8_t digit_encode(int digit) {
 
 uint8_t char_encode(char c) {
   switch (c) {
-    case '-': return 64;
-    case '.': return 128;
+    case '-': return 0x40;
+    case '.': return 0x80;
+    case 'b': return 0x7C;
+    case 'c': return 0x58;
+    case 't': return 0x78;
+    case ' ':
     default: return 0;
   }
 }
@@ -112,6 +116,7 @@ void connect(const char *ssid, const char *username, const char *password) {
     wifi_station_clear_enterprise_ca_cert();
 
     wifi_station_set_wpa2_enterprise_auth(1);
+    wifi_station_set_enterprise_identity((uint8*)username, strlen(username));
     wifi_station_set_enterprise_username((uint8*)username, strlen(username));
     wifi_station_set_enterprise_password((uint8*)password, strlen(password));
 
@@ -186,9 +191,14 @@ void loop() {
   Serial.print(WiFi.localIP());
   Serial.print(" -");
   
-  for (int d = 0; d < 5; d++) {
-      display7.writeDigitRaw(d, char_encode('-'));
-  }
+
+  //for (int d = 0; d < 5; d++) {
+  //    display7.writeDigitRaw(d, char_encode('-'));
+  //}
+  display7.writeDigitRaw(0, char_encode(' '));
+  display7.writeDigitRaw(1, char_encode('b'));
+  display7.writeDigitRaw(3, char_encode('t'));
+  display7.writeDigitRaw(4, char_encode('c'));
   display7.writeDisplay();
 
   HTTPClient http;
@@ -196,16 +206,15 @@ void loop() {
   http.begin("http://blockchain.info/ticker");
   Serial.print("-");
   int httpCode = http.GET();
-  Serial.printf("-%d-", httpCode);
+  Serial.printf("S=%d ", httpCode);
   if(httpCode > 0) {
       //Serial.printf("HTTP GET => %d\n", httpCode);
       if(httpCode == HTTP_CODE_OK) {
           DynamicJsonBuffer jsonBuffer;
-          Serial.printf("-%d bytes-", http.getSize());
           String payload = http.getString();
           //Serial.println(payload);
           //Serial.flush();
-          Serial.print("-");
+          Serial.printf("=%dB", payload.length());
           JsonObject& root = jsonBuffer.parseObject(payload);
           if (!root.success()) {
             Serial.println("JSON parse failed");
@@ -218,7 +227,7 @@ void loop() {
             if (usd != 0.0) {
               Serial.print("$");
               last_btc = usd;
-              //EEPROM_writeAnything(0, last_btc);
+              EEPROM_writeAnything(0, last_btc);
               Serial.print("$");              
             }
           }
@@ -234,5 +243,5 @@ void loop() {
   display7.writeDisplay();
   Serial.println("E");
 
-  delay(15000);
+  delay(60000);
 }
