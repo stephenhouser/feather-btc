@@ -14,6 +14,28 @@ extern "C" {
   #include "wpa2_enterprise.h"
 }
 
+//static const char *ssl_fingerprint = "4A 77 02 67 01 76 4E BE DE 3C 38 BF 1E 9B F3 65 A7 CB AD 2F 7D ED 21 9E 97 B5 B7 57 AB 31 96 18";
+//static const char *ssl_fingerprint = "EF 9D 44 BA 1A 91 4C 42 06 B1 6A 25 71 26 58 61 BA DA FA B9";;
+//static const char *ssl_fingerprint = "D6:55:19:B1:D9:BB:07:D6:DC:D9:6C:41:B5:25:26:7E:5B:33:46:64";
+static const char *coinrank_base_url = "https://api.coinmarketcap.com/v1/ticker/";
+
+static const char *blockchain_base_url = "http://blockchain.info/ticker";
+static const char *ssl_fingerprint = NULL;
+
+typedef struct {
+  char *id;
+  char *ticker;
+  float price_usd;
+} coin_info;
+
+#define COIN_COUNT 3
+
+coin_info coins[] {
+  { "bitcoin", " btc", 0.0 },
+  { "ethereum", " eth", 0.0 },
+  { "bitcoin-cash", " bch", 0.0 }
+};
+
 template <class T> int EEPROM_writeAnything(int ee, const T& value) {
     const byte* p = (const byte*)(const void*)&value;
     unsigned int i;
@@ -45,7 +67,6 @@ struct WiFiNet {
 
 #define DISPLAY_ADDRESS   0x70
 Adafruit_7segment display7 = Adafruit_7segment();
-float last_btc = 0.0;
 
 static const uint8_t numbertable[] = {
   0x3F, /* 0 */
@@ -121,7 +142,6 @@ void connect(const char *ssid, const char *username, const char *password) {
     wifi_station_set_enterprise_password((uint8*)password, strlen(password));
 
     WiFi.begin();
-    //wifi_station_connect();
   }
 }
 
@@ -158,18 +178,99 @@ const struct WiFiNet *wifi_scan() {
   return best_ap;
 }
 
+String ticker_url(const char *coin_id) {
+  // coinmarketcap.com
+  //String url = (String(coinrank_base_url) + coin_id) + "/";
+  // blockchain.info
+  String url = String(blockchain_base_url);
+  return url;
+}
+
+float price_from_json(String &payload) {
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(payload);
+  if (root.success()) {
+    // blockchain.info
+    const char *price_usd_string = root["USD"]["last"];
+    // coinmarketcap.com
+    //const char *price_usd_string = root[0]["price_usd"];
+    float price_usd = atof(price_usd_string);
+    if (price_usd > 0.0) {
+      return price_usd;
+    }
+  }
+
+  return -1.0;  // Failure
+}
+
+/*
+float get_last_price(int coin_index) {
+  EEPROM.begin(sizeof(float));
+
+  float last_price = 0.0;
+  int address = sizeof(float) * coin_index;
+  return EEPROM.get(address, last_price)
+
+  //EEPROM_readAnything(0, last_price);
+}
+
+void set_last_price(int coin_index) {
+
+}
+*/
+
+float get_price_usd(const char *coin_id) {
+  float price_usd = -2.0;
+  HTTPClient http;
+
+  String url = ticker_url(coin_id);
+  Serial.print(url);  
+
+  http.useHTTP10(true);
+  http.begin(url);
+  int httpCode = http.GET();
+  Serial.printf(" ==> %d; ", httpCode);  
+  if (httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      price_usd = price_from_json(payload);
+      if (price_usd <= 0.0) {
+        Serial.printf("Price parsing error\n");  
+      }
+  } else {
+      Serial.printf("HTTP GET failed, error: %s\n", http.errorToString(httpCode).c_str());
+  }
+
+  http.end();
+  return price_usd;
+}
+
+void show_ticker(const char *ticker) {  
+  if (strlen(ticker) >= 4) {
+    display7.writeDigitRaw(0, char_encode(ticker[0]));
+    display7.writeDigitRaw(1, char_encode(ticker[1]));
+    display7.writeDigitRaw(3, char_encode(ticker[2]));
+    display7.writeDigitRaw(4, char_encode(ticker[3]));
+    display7.writeDisplay();
+  }
+}
+
+void show_value(float price_usd) {
+  display7.print(round(price_usd));
+  display7.writeDisplay();
+}
+
 void setup(){
   Serial.begin(115200);
   Serial.println("Startup...");
 
-  EEPROM.begin(sizeof(float));
-  EEPROM_readAnything(0, last_btc);
-
   // Setup the display.
   display7.begin(DISPLAY_ADDRESS);
   display7.setBrightness(5);
-  display7.print((int)last_btc);
-  display7.writeDisplay();
+
+  float last_price = 0.0;
+  EEPROM.begin(sizeof(float));
+  EEPROM_readAnything(0, last_price);
+  show_value(last_price);
 }
 
 void loop() {
@@ -190,8 +291,24 @@ void loop() {
   Serial.print(" IP=");
   Serial.print(WiFi.localIP());
   Serial.print(" -");
-  
 
+  int coin_index = 0;
+  coin_info *coin = &coins[coin_index];
+  show_ticker(coin->ticker);
+  float price_usd = get_price_usd(coin->id);
+  if (price_usd > 0.0) {    
+    coin->price_usd = price_usd;
+    show_value(price_usd);
+
+    Serial.print("$");
+    Serial.print(price_usd);
+
+    // Save the last thing we got.
+    EEPROM_writeAnything(0, price_usd);    
+  }
+
+
+/*
   //for (int d = 0; d < 5; d++) {
   //    display7.writeDigitRaw(d, char_encode('-'));
   //}
@@ -242,6 +359,7 @@ void loop() {
   display7.print(round(last_btc));
   display7.writeDisplay();
   Serial.println("E");
+  */
 
   delay(60000);
 }
