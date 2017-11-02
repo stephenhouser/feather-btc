@@ -120,7 +120,7 @@ const struct WiFiNet *find_ssid(const char *ssid) {
   return NULL;
 }
 
-void connect(const char *ssid, const char *username, const char *password) {
+void wifi_connect(const char *ssid, const char *username, const char *password) {
   if (username == NULL) {
     WiFi.begin(ssid, password);
   } else {
@@ -146,7 +146,7 @@ void connect(const char *ssid, const char *username, const char *password) {
 }
 
 const struct WiFiNet *wifi_scan() {
-  Serial.printf("scan start... %d known networks, ", sizeof(known_networks) / sizeof(struct WiFiNet));
+  Serial.printf("scanning wifi... %d known networks, ", sizeof(known_networks) / sizeof(struct WiFiNet));
   const struct WiFiNet * best_ap = NULL;
   int best_signal = -100;
 
@@ -156,26 +156,46 @@ const struct WiFiNet *wifi_scan() {
     Serial.printf("%d networks found.\n", networks);
 
     for (int i = 0; i < networks; ++i) {
-      Serial.printf("%d: %s, Ch:%d (%ddBm) %s\n", i + 1, WiFi.SSID(i).c_str(), 
-        WiFi.channel(i), WiFi.RSSI(i), 
-        WiFi.encryptionType(i) == ENC_TYPE_NONE ? "open" : "");
+      //Serial.printf("%d: %s, Ch:%d (%ddBm) %s\n", i + 1, WiFi.SSID(i).c_str(), 
+      //  WiFi.channel(i), WiFi.RSSI(i), 
+      //  WiFi.encryptionType(i) == ENC_TYPE_NONE ? "open" : "");
 
-        if (WiFi.RSSI(i) > best_signal) {
-          const struct WiFiNet *net = find_ssid(WiFi.SSID(i).c_str());
-          if (net != NULL) {
-            best_ap = net;
-            best_signal = WiFi.RSSI(i);
-          }
+      if (WiFi.RSSI(i) > best_signal) {
+        const struct WiFiNet *net = find_ssid(WiFi.SSID(i).c_str());
+        if (net != NULL) {
+          best_ap = net;
+          best_signal = WiFi.RSSI(i);
         }
+      }
     }
   }
 
   if (best_ap) {
-    Serial.printf("Using [%s, %ddBm]", best_ap->ssid, best_signal); 
+    Serial.printf("Using [%s, %ddBm]\n", best_ap->ssid, best_signal); 
   } else {
     Serial.println("Did not find acceptable network");
   }
   return best_ap;
+}
+
+bool wifi_verify() {
+  Serial.print("Verify connectivity... ");
+  if (WiFi.status() != WL_CONNECTED) {
+    const struct WiFiNet *ap = wifi_scan();
+    if (ap != NULL) {
+      Serial.print("connecting ");
+      wifi_connect(ap->ssid, ap->username, ap->password);
+      while (WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.print(".");  
+      }
+    }
+  }
+
+  // Now we are connected
+  Serial.print(" connected IP=");
+  Serial.println(WiFi.localIP());
+  return true;
 }
 
 String ticker_url(const char *coin_id) {
@@ -203,24 +223,24 @@ float price_from_json(String &payload) {
   return -1.0;  // Failure
 }
 
-/*
-float get_last_price(int coin_index) {
-  EEPROM.begin(sizeof(float));
+void setup_last_price() {
+  EEPROM.begin(sizeof(float) * COIN_COUNT);
+}
 
+float read_last_price(int index) {
   float last_price = 0.0;
-  int address = sizeof(float) * coin_index;
-  return EEPROM.get(address, last_price)
-
-  //EEPROM_readAnything(0, last_price);
+  int address = sizeof(float) * index;
+  return EEPROM.get(address, last_price);
 }
 
-void set_last_price(int coin_index) {
-
+void write_last_price(int index, float price_usd) {
+  int address = sizeof(float) * index;
+  EEPROM.put(address, price_usd);
+  EEPROM.commit();
 }
-*/
 
 float get_price_usd(const char *coin_id) {
-  float price_usd = -2.0;
+  float price_usd = -1.0;
   HTTPClient http;
 
   String url = ticker_url(coin_id);
@@ -267,99 +287,29 @@ void setup(){
   display7.begin(DISPLAY_ADDRESS);
   display7.setBrightness(5);
 
-  float last_price = 0.0;
-  EEPROM.begin(sizeof(float));
-  EEPROM_readAnything(0, last_price);
+  setup_last_price();
+  float last_price = read_last_price(0);
   show_value(last_price);
 }
 
 void loop() {
-  Serial.print("B");
-  if (WiFi.status() != WL_CONNECTED) {
-    const struct WiFiNet *ap = wifi_scan();
-    if (ap != NULL) {
-      connect(ap->ssid, ap->username, ap->password);
-      Serial.print("-");
-      while (WiFi.status() != WL_CONNECTED) {
-        delay(1000);
-        Serial.print(".");  
-      }
+  // ensure we are connected. Blocks until we are.
+  if (wifi_verify()) {
+    int coin_index = 0;
+    coin_info *coin = &coins[coin_index];
+    show_ticker(coin->ticker);
+    float price_usd = get_price_usd(coin->id);
+    if (price_usd > 0.0) {    
+      coin->price_usd = price_usd;
+      show_value(price_usd);
+
+      Serial.print("$");
+      Serial.println(price_usd);
+
+      // Save the last thing we got.
+      write_last_price(coin_index, price_usd);
     }
   }
-
-  // Now we are connected
-  Serial.print(" IP=");
-  Serial.print(WiFi.localIP());
-  Serial.print(" -");
-
-  int coin_index = 0;
-  coin_info *coin = &coins[coin_index];
-  show_ticker(coin->ticker);
-  float price_usd = get_price_usd(coin->id);
-  if (price_usd > 0.0) {    
-    coin->price_usd = price_usd;
-    show_value(price_usd);
-
-    Serial.print("$");
-    Serial.print(price_usd);
-
-    // Save the last thing we got.
-    EEPROM_writeAnything(0, price_usd);    
-  }
-
-
-/*
-  //for (int d = 0; d < 5; d++) {
-  //    display7.writeDigitRaw(d, char_encode('-'));
-  //}
-  display7.writeDigitRaw(0, char_encode(' '));
-  display7.writeDigitRaw(1, char_encode('b'));
-  display7.writeDigitRaw(3, char_encode('t'));
-  display7.writeDigitRaw(4, char_encode('c'));
-  display7.writeDisplay();
-
-  HTTPClient http;
-  http.useHTTP10(true);
-  http.begin("http://blockchain.info/ticker");
-  Serial.print("-");
-  int httpCode = http.GET();
-  Serial.printf("S=%d ", httpCode);
-  if(httpCode > 0) {
-      //Serial.printf("HTTP GET => %d\n", httpCode);
-      if(httpCode == HTTP_CODE_OK) {
-          DynamicJsonBuffer jsonBuffer;
-          String payload = http.getString();
-          //Serial.println(payload);
-          //Serial.flush();
-          Serial.printf("=%dB", payload.length());
-          JsonObject& root = jsonBuffer.parseObject(payload);
-          if (!root.success()) {
-            Serial.println("JSON parse failed");
-          } else {
-            Serial.print("-");
-            const char *last = root["USD"]["last"];
-            Serial.print("-");
-            float usd = atof(last);
-            Serial.print("-");
-            if (usd != 0.0) {
-              Serial.print("$");
-              last_btc = usd;
-              EEPROM_writeAnything(0, last_btc);
-              Serial.print("$");              
-            }
-          }
-      }
-  } else {
-      Serial.printf("HTTP GET failed, error: %s\n", http.errorToString(httpCode).c_str());
-  }
-
-  http.end();
-
-  Serial.printf(" BTC=%g ", last_btc);
-  display7.print(round(last_btc));
-  display7.writeDisplay();
-  Serial.println("E");
-  */
 
   delay(60000);
 }
