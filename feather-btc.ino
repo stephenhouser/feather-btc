@@ -1,6 +1,9 @@
 /* Feather BTC - BitCoin USD Display on Adafruit HUZZAH ESP8266 Feather
  *
  */
+//#define DEBUG_SSL
+//#define DEBUGV
+
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <ESP8266WiFi.h>
@@ -14,13 +17,15 @@ extern "C" {
   #include "wpa2_enterprise.h"
 }
 
+#define TICKER_COINMARKETCAP
 //static const char *ssl_fingerprint = "4A 77 02 67 01 76 4E BE DE 3C 38 BF 1E 9B F3 65 A7 CB AD 2F 7D ED 21 9E 97 B5 B7 57 AB 31 96 18";
-//static const char *ssl_fingerprint = "EF 9D 44 BA 1A 91 4C 42 06 B1 6A 25 71 26 58 61 BA DA FA B9";;
 //static const char *ssl_fingerprint = "D6:55:19:B1:D9:BB:07:D6:DC:D9:6C:41:B5:25:26:7E:5B:33:46:64";
-static const char *coinrank_base_url = "https://api.coinmarketcap.com/v1/ticker/";
-
-static const char *blockchain_base_url = "http://blockchain.info/ticker";
-static const char *ssl_fingerprint = NULL;
+#if defined(TICKER_COINMARKETCAP)
+static const char *base_url = "https://api.coinmarketcap.com/v1/ticker/";
+static const char *ssl_fingerprint = "FC 73 E0 2A 02 8F BD 49 8B E8 59 5E 00 B5 30 BF C8 79 5C E7";;
+#else
+static const char *base_url = "http://blockchain.info/ticker";
+#endif
 
 typedef struct {
   char *id;
@@ -195,32 +200,61 @@ bool wifi_verify() {
   // Now we are connected
   Serial.print(" connected IP=");
   Serial.println(WiFi.localIP());
+
+  //configTime(3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+  //Serial.println("done.");
   return true;
 }
 
 String ticker_url(const char *coin_id) {
-  // coinmarketcap.com
-  //String url = (String(coinrank_base_url) + coin_id) + "/";
-  // blockchain.info
-  String url = String(blockchain_base_url);
+  #if defined(TICKER_COINMARKETCAP)
+    // coinmarketcap.com
+    String url = (String(base_url) + coin_id) + "/";
+  #else
+    // blockchain.info
+    String url = String(base_url);
+  #endif
   return url;
 }
 
-float price_from_json(String &payload) {
-  DynamicJsonBuffer jsonBuffer;
+float price_from_blockchan_json(String &payload) {
+  const size_t bufferSize = 22*JSON_OBJECT_SIZE(5) + JSON_OBJECT_SIZE(22) + 1660;
+  DynamicJsonBuffer jsonBuffer(bufferSize);
   JsonObject& root = jsonBuffer.parseObject(payload);
   if (root.success()) {
     // blockchain.info
     const char *price_usd_string = root["USD"]["last"];
-    // coinmarketcap.com
-    //const char *price_usd_string = root[0]["price_usd"];
     float price_usd = atof(price_usd_string);
     if (price_usd > 0.0) {
       return price_usd;
     }
   }
 
-  return -1.0;  // Failure
+return -1.0;  // Failure
+}
+
+float price_from_coinmarketcap_json(String &payload) {
+  const size_t bufferSize = JSON_ARRAY_SIZE(1) + JSON_OBJECT_SIZE(14) + 310;  
+  DynamicJsonBuffer jsonBuffer(bufferSize);
+  JsonArray& root = jsonBuffer.parseArray(payload);
+  if (root.success()) {
+    // coinmarketcap.com
+    const char *price_usd_string = root[0]["price_usd"];
+    float price_usd = atof(price_usd_string);
+    if (price_usd > 0.0) {
+      return price_usd;
+    }
+  }
+
+return -1.0;  // Failure
+}
+
+float price_from_json(String &payload) {
+  #if defined(TICKER_COINMARKETCAP)
+    return price_from_coinmarketcap_json(payload);
+  #else
+  return price_from_blockchain_json(payload);
+  #endif
 }
 
 void setup_last_price() {
@@ -247,7 +281,11 @@ float get_price_usd(const char *coin_id) {
   Serial.print(url);  
 
   http.useHTTP10(true);
-  http.begin(url);
+  #if defined(TICKER_COINMARKETCAP)
+    http.begin(url, ssl_fingerprint);
+  #else
+    http.begin(url, ssl_fingerprint);
+  #endif
   int httpCode = http.GET();
   Serial.printf(" ==> %d; ", httpCode);  
   if (httpCode == HTTP_CODE_OK) {
@@ -279,8 +317,9 @@ void show_value(float price_usd) {
   display7.writeDisplay();
 }
 
-void setup(){
+void setup(){  
   Serial.begin(115200);
+  Serial.setDebugOutput(true);
   Serial.println("Startup...");
 
   // Setup the display.
